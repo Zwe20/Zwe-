@@ -1,0 +1,144 @@
+#include <stdio.h> 
+#include <stdlib.h> 
+#include <xc.h> 
+#include <pic18f4550.h> 
+#pragma config FOSC = INTOSCIO_EC    // Internal oscillator, port function on RA6, EC 
+used by USB.  
+#pragma config WDT = OFF             
+#pragma config MCLRE = OFF              
+// Disable watchdog timer 
+// MCLR Pin Enable bit (RE3 input pin enabled; 
+MCLR pin disabled) 
+#define RS LATA0                   
+#define RW LATA1                   
+// PORT A pin#0 is used for Data/Instruction signal 
+// PORT A pin#1 is used for Read/Write signal 
+18
+#define EN LATA2                   // PORT A pin#2 is used for Enable signal 
+#define ldata LATD                 // PORT D is used for transmitting data to LCD 
+#define LCD_Port TRISD               
+#define LCD_Control TRISA 
+#define _XTAL_FREQ 8000000              // 8MHz for __delay_ms() function 
+void Delayms(unsigned int val) 
+{ 
+     unsigned int i,j; 
+        for(i=0;i<val;i++) 
+            __delay_ms(1);    
+} 
+void LCD_Init(); 
+void LCD_Command(char ); 
+void LCD_Char(char x); 
+void LCD_String(const char *); 
+void LCD_String_xy(char ,char ,const char*); 
+/*****************************Main Program*******************************/ 
+void main(void) 
+{        
+    OSCCON=0x72;                   // Use Internal Oscillator with Frequency 8MHZ 
+    LCD_Init();                    // Initialize 16x2 LCD 
+     
+    ADCON1 = 0xFF;          //Set all ports to digital 
+ INTCON2bits.RBPU = 0; //Set internal pull ups port B 
+ TRISB = 0x0F; //Configure most significant of port  B as o/p and least to  
+    inputs for row scanning 
+    while(1) 
+    { 
+ LATB = 0b11100000; 
+ Delayms(150); 
+  19
+if (PORTBbits.RB0 == 0) 
+LCD_String_xy(0,1,"1");    //Display  1 
+if (PORTBbits.RB1 == 0) 
+LCD_String_xy(0,1,"4");  
+if (PORTBbits.RB2 == 0) 
+LCD_String_xy(0,1,"7");  
+if (PORTBbits.RB3 == 0) 
+LCD_String_xy(0,1,"*");  
+LATB = 0b10110000; 
+Delayms(150); 
+if (PORTBbits.RB0 == 0) 
+LCD_String_xy(0,1,"2");  
+if (PORTBbits.RB1 == 0) 
+LCD_String_xy(0,1,"5");  
+if (PORTBbits.RB2 == 0) 
+LCD_String_xy(0,1,"8");  
+if (PORTBbits.RB3 == 0) 
+LCD_String_xy(0,1,"0");  
+LATB = 0b01110000; 
+Delayms(150); 
+if (PORTBbits.RB0 == 0) 
+LCD_String_xy(0,1,"3");  
+if (PORTBbits.RB1 == 0) 
+LCD_String_xy(0,1,"6");  
+if (PORTBbits.RB2 == 0) 
+LCD_String_xy(0,1,"9");  
+//Display 4 
+//Display 7 
+//Display * 
+//Display 2 
+//Display 5 
+//Display 8 
+//Display 0 
+//Display 3 
+//Display 6 
+//Display 9 
+20
+ if (PORTBbits.RB3 == 0) 
+ LCD_String_xy(0,1,"#");  //Display # 
+   } 
+} 
+/****************************Functions********************************/ 
+void LCD_Init() 
+{ 
+    __delay_ms(5);         // 15ms,16x2 LCD Power on delay 
+    LCD_Port = 0x00;       // Set PORTD as output PORT for LCD data(D0-D7) pins 
+    LCD_Control = 0x00;    // Set PORTD as output PORT LCD Control(RS,EN) Pins 
+    LCD_Command(0x38);     // uses 2 line and initialize 5*7 matrix of LCD 
+    LCD_Command(0x01);     // clear display screen */ 
+    LCD_Command(0x0c);     // display on cursor off */ 
+    LCD_Command(0x06);     // increment cursor (shift cursor to right) 
+} 
+void LCD_Clear() 
+{ 
+    LCD_Command(0x01);      // clear display screen 
+} 
+void LCD_Command(char cmd ) 
+{ 
+ ldata= cmd;            // Send data to PORT as a command for LCD    
+ RS = 0;                // Command Register is selected 
+ EN = 1;                // High-to-Low pulse on Enable pin to latch data  
+ NOP(); 
+ EN = 0; 
+ __delay_ms(3);  
+} 
+void LCD_Char(char dat) 
+{ 
+ ldata= dat;            // Send data to LCD 
+ RS = 1;                // Data Register is selected 
+ EN=1;                  // High-to-Low pulse on Enable pin to latch data    
+ NOP(); 
+ EN=0; 
+ __delay_ms(1); 
+  21
+} 
+void LCD_String(const char *msg) 
+{ 
+ while((*msg)!=0) 
+ {   
+   LCD_Char(*msg); 
+   msg++;  
+     } 
+   
+} 
+void LCD_String_xy(char row,char pos,const char *msg) 
+{ 
+    char location=0; 
+    if(row>=1) 
+    { 
+        location=(0x80) | ((pos) & 0x0f); /*Print message on 1st row and desired location*/ 
+        LCD_Command(location); 
+     
+        location=(0xC0) | ((pos) & 0x0f); /*Print message on 2nd row and desired location*/ 
+        LCD_Command(location);  
+    } 
+    LCD_String(msg); 
+}
