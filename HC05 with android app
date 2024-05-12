@@ -1,0 +1,333 @@
+#include <stdio.h> 
+#include <stdlib.h> 
+#include <xc.h> 
+#include <pic18f4550.h> 
+#pragma config FOSC = INTOSCIO_EC    
+used by USB.  
+#pragma config WDT = OFF             
+// Internal oscillator, port function on RA6, EC 
+// Disable watchdog timer 
+#pragma config MCLRE = OFF              
+MCLR pin disabled) 
+void USART_Init(long); 
+void USART_TransmitChar(char); 
+void USART_SendString(const char *); 
+void MSdelay(unsigned int val); 
+char USART_ReceiveChar(); 
+#define F_CPU 8000000/64 
+// MCLR Pin Enable bit (RE3 input pin enabled; 
+//#define Baud_value(baud_rate) (((float)(F_CPU)/(float)baud_rate)-1) 
+#define Baud_value (((float)(F_CPU)/(float)baud_rate)-1) 
+#define sol LATE0 
+#define LEDred  LATC2       
+//LED initialization 
+#define LEDgreen LATC0      //LED initialization 
+#define LEDyellow LATC1     //LED initialization 
+28
+int pw[3];                  //array for password  
+int newpw[3];               //array for new password 
+unsigned char keypad_read(void)     //keypad function 
+{ 
+    ADCON1 = 0xff;                  /*Set all inputs as Digital I/O. */ 
+     
+    INTCON2bits.RBPU = 0; // Set Internal port B Pull Ups 
+        LATB = 0b11100000;          // Scan Columns 1 Set RB4 to zero     
+        MSdelay(50); 
+        if (PORTBbits.RB0==0)       // Row 1, Press 1 
+            return '1'; 
+        if (PORTBbits.RB1==0)       // Row 2, Press 4 
+            return '4'; 
+        if (PORTBbits.RB2==0)       // Row 3, Press 7 
+            return '7'; 
+        if (PORTBbits.RB3==0)       // Row 4, Press * 
+            return '*'; 
+     
+        LATB = 0b10110000;          // Scan Columns 2 Set RB6 to zero  
+        MSdelay(50); 
+        if (PORTBbits.RB0==0)       // Row 1, Press 2 
+            return '2';          
+        if (PORTBbits.RB1==0)       // Row 2, Press 5 
+            return '5'; 
+        if (PORTBbits.RB2==0)       // Row 3, Press 8 
+            return '8'; 
+        if (PORTBbits.RB3==0)       // Row 4, Press 0 
+            return '0'; 
+         
+        LATB = 0b01110000;          // Scan Columns 3 Set RB7 to zero 
+  29
+        MSdelay(50); 
+         
+        if (PORTBbits.RB0==0)       // Row 1, Press 3 
+            return '3'; 
+        if (PORTBbits.RB1==0)       // Row 2, Press 6 
+            return '6'; 
+        if (PORTBbits.RB2==0)       // Row 3, Press 9 
+            return '9'; 
+        if (PORTBbits.RB3==0)       // Row 4, Press # 
+        {    
+            return '#'; 
+        } 
+        return ' '; 
+} 
+unsigned char keypad_wait(void) 
+{ 
+    // The pressed key.  
+    unsigned char c_pressed_key = ' '; 
+     
+    // Wait until the key is pressed.  
+    do{ 
+        c_pressed_key = keypad_read(); 
+    } 
+    while(c_pressed_key == ' '); 
+     
+    // Wait until the key is released.  
+    while(keypad_read() != ' '); 
+    return c_pressed_key; 
+} 
+void wrongpw2() {       //password function2 
+     char data_c[3]; 
+     unsigned int d = 0;      
+  30
+    do{ 
+        LEDyellow=0; 
+        MSdelay(500); 
+        LEDred =1; 
+        MSdelay(100); 
+        LEDred =0; 
+        LEDyellow=1; 
+        USART_SendString("Type password again\n");  
+        d=0; 
+         for(int i = 0; i < 3; i++) 
+        { 
+            data_c[i]=USART_ReceiveChar(); 
+            if(data_c[i] == pw[i]) 
+                d++; 
+        } 
+    }  while (d != 3);             
+} 
+void wrongpw() {         //wrong password function1 
+     char data_b[3]; 
+     unsigned int c = 0; 
+    do{ 
+        LEDyellow=0; 
+        MSdelay(500); 
+        LEDred =1; 
+        MSdelay(100); 
+        LEDred =0; 
+        LEDyellow=1; 
+        USART_SendString("Type password again\n "); 
+        c=0; 
+         for(int i = 0; i < 3; i++) 
+        { 
+  31
+            data_b[i]=USART_ReceiveChar(); 
+            if(data_b[i] == pw[i]) 
+                c++; 
+        } 
+    }  while (c != 3); 
+} 
+void storepw(){         //saving password function 
+    unsigned int d; 
+            for (int i=0;i<3;i++){ 
+            pw[i]= USART_ReceiveChar(); 
+             
+            } 
+        } 
+void storepw2(){       //saving new password function ; 
+    newpw[i]= USART_ReceiveChar(); 
+            } 
+         
+         
+/*********************USART Initialization*******************************/ 
+void USART_Init(long baud_rate) 
+{ 
+    float temp; 
+    TRISC6=0;                       /*Make Tx pin as output*/ 
+    TRISC7=1;                       /*Make Rx pin as input*/ 
+    temp=Baud_value;      
+    SPBRG=(int)temp;                /*baud rate=9600, SPBRG = (F_CPU /(64*9600))-1*/ 
+    TXSTA=0x20;                     /*Transmit Enable(TX) enable*/  
+    RCSTA=0x90;                     /*Receive Enable(RX) enable and serial port enable */ 
+} 
+/******************TRANSMIT FUNCTION*****************************************/  
+  32
+void USART_TransmitChar(char out) 
+{         
+        while(TXIF==0);            /*wait for transmit interrupt flag*/ 
+        TXREG=out;                 /*wait for transmit interrupt flag to set which indicates TXREG is 
+ready 
+                                    for another transmission*/     
+} 
+/*******************RECEIVE FUNCTION*****************************************/ 
+char USART_ReceiveChar() 
+{ 
+    while(RCIF==0);                 /*wait for receive interrupt flag*/ 
+    return(RCREG);                  /*receive data is stored in RCREG register and return to main 
+program */ 
+} 
+void USART_SendString(const char *out) 
+{ 
+   while(*out!='\0') 
+   {             
+        USART_TransmitChar(*out); 
+        out++; 
+   } 
+} 
+/*********************************Delay Function********************************/ 
+void MSdelay(unsigned int val) 
+{ 
+     unsigned int i,j; 
+        for(i=0;i<=val;i++) 
+            for(j=0;j<81;j++);      /*This count Provide delay of 1 ms for 8MHz Frequency */ 
+ } 
+void main() 
+  33
+{ 
+    ADCON1 = 0xff;                  /*Set all inputs as Digital I/O. */ 
+    OSCCON=0x72;              /* use internal oscillator frequency which is set to * MHz */ 
+    char data_in[3]; 
+    char data_a[3]; 
+    char data_d[3]; 
+    char data_e[3]; 
+    char data_f[3]; 
+    unsigned int data; 
+    unsigned int a = 0; //first time pwd checking count 
+    unsigned int b = 0; //count for checking pwd after lock       
+    unsigned int d = 0; 
+    TRISC = 0; 
+    USART_Init(9600);         /* initialize USART operation with 9600 baud rate */  
+    MSdelay(50);  
+    LEDred=0; 
+    LEDgreen=0; 
+    LEDyellow=0; 
+    USART_SendString("*Welcome to ELECTRONIC LOCK SYSTEM*\n Set Password  "); 
+    storepw(); 
+    LEDyellow=1; 
+    LEDgreen=0; 
+    LEDred=0; 
+    USART_SendString("Enter password");   
+        for(int i = 0; i < 3; i++) 
+        { 
+            data_in[i]=USART_ReceiveChar(); 
+            if(data_in[i] == pw[i]) 
+                a++; 
+        }         
+         if (a == 3){ 
+  34
+            USART_SendString("correct password\n"); 
+            LEDyellow =0; 
+            LEDgreen =1; 
+            MSdelay(100); 
+            LEDgreen =0; 
+             
+         }else  { 
+             USART_SendString("wrong password\n"); 
+             LEDyellow =0; 
+             wrongpw(); 
+         } 
+     
+    while(1) 
+    { 
+        LEDred=1; 
+        LEDgreen=1; 
+        LEDyellow=1; 
+         
+        USART_SendString("*Welcome to ELECTRONIC LOCK SYSTEM*\r\n 1.Unlock \n 2. 
+Lock\n 3.Change Password");  
+        data=USART_ReceiveChar(); 
+        
+        if(data=='1') 
+        {                        
+            LEDgreen=1; 
+            LEDred=0; 
+            LEDyellow=0;      
+            MSdelay(2000); 
+            USART_SendString("Unlocked\n"); /* send LED ON status to terminal */ 
+        } 
+        else if(data=='2')                 
+        {            
+  35
+            LEDred = 1; 
+            LEDgreen =0; 
+            LEDyellow=0; 
+            MSdelay(2000); 
+            USART_SendString("Locked\n");/* send LED ON status to terminal */ 
+            LEDyellow=1; 
+            LEDred=0; 
+            LEDgreen=0; 
+            USART_SendString("Enter password"); // putrsUSART for PIC18F4550  
+            b=0; 
+            for(int i = 0; i < 3; i++) 
+            { 
+                data_d[i]=USART_ReceiveChar(); 
+                if(data_d[i] == pw[i]) 
+                    b++; 
+            }         
+             if (b == 3){ 
+                USART_SendString("correct password\n"); 
+                LEDgreen =1; 
+                MSdelay(100); 
+                LEDgreen =0; 
+             }else  { 
+                 USART_SendString("wrong password\n"); 
+                 wrongpw(); 
+             } 
+        } 
+        else if(data=='3') 
+        { 
+            unsigned int c = 0;// checking for old  password  
+            unsigned int d = 0;// for checking password after changing new one 
+            LEDred=0; 
+            LEDgreen=0; 
+  36
+            LEDyellow=0; 
+            USART_SendString("enter old password\n"); 
+            for(int i= 0; i< 3; i++) 
+            { 
+                data_e[i]=USART_ReceiveChar(); 
+                if(data_e[i] == pw[i]) 
+                    c++; 
+            }         
+            if (c == 3){  
+               USART_SendString("correct password\n"); 
+                LEDgreen =1; 
+                MSdelay(100); 
+                LEDgreen =0; 
+                USART_SendString("enter new password\n"); 
+            }else  { 
+                USART_SendString("wrong password\n"); 
+                wrongpw2(); 
+                USART_SendString("enter new password\n"); 
+            } 
+            //update new pwd 
+            storepw2(); 
+            
+            for (int i=0;i<3;i++){//save new pw 
+                pw[i]=newpw[i]; 
+            } 
+            LEDyellow=1; 
+            LEDred=0; 
+            LEDgreen=0; 
+             USART_SendString("Enter password"); // putrsUSART for PIC18F4550   
+            for(int i = 0; i < 3; i++) 
+            { 
+                data_f[i]=USART_ReceiveChar(); 
+  37
+                if(data_f[i] == pw[i]) 
+                    d++; 
+            } 
+             if (d == 3){ 
+                USART_SendString("correct password\n"); 
+                LEDgreen =1; 
+            MSdelay(100); 
+            LEDgreen =0; 
+             }else  { 
+                 USART_SendString("wrong password\n"); 
+                  
+                 wrongpw(); 
+             } 
+     
+    } 
+} 
+                       
+} 
